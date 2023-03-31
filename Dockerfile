@@ -10,9 +10,8 @@ FROM mlocati/php-extension-installer:${EXTENSION_INSTALLER_VERSION} as extension
 
 FROM php:${PHP_VERSION}-fpm-alpine${ALPINE_VERSION} as base
 
-# Add Alpine dependencies
+# Add alpine dependencies
 RUN apk add --no-cache \
-    git \
     icu \
     musl-locales \
     tzdata;
@@ -20,10 +19,9 @@ RUN apk add --no-cache \
 # Configure PHP
 ENV PHP_EXTENSIONS "bcmath intl opcache pcntl redis zip"
 COPY --from=extension-installer /usr/bin/install-php-extensions /usr/local/bin/
-RUN install-php-extensions $PHP_EXTENSIONS \
-    && mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini";
+RUN install-php-extensions $PHP_EXTENSIONS;
 
-# Add Composer
+# Add composer
 ENV COMPOSER_ALLOW_SUPERUSER 1
 ENV COMPOSER_HOME /tmp
 COPY --from=composer /composer /usr/bin/composer
@@ -41,27 +39,26 @@ RUN cp /usr/share/zoneinfo/$TZ /etc/localtime \
 
 FROM base as dev
 
-# Additional PHP config
+# Additional PHP extensions and config
 ENV PHP_DEV_EXTENSIONS "pcov xdebug"
 RUN install-php-extensions $PHP_DEV_EXTENSIONS
     && mv "$PHP_INI_DIR/php.ini-development" "$PHP_INI_DIR/php.ini";
+   
+# Install composer dependencies
+COPY composer.json composer.lock ./
+RUN composer install --no-autoloader --no-interaction --no-progress --no-scripts --prefer-dist
+COPY . .
+RUN composer dump-autoload --optimize
 
 # --------------------------------------------------------------------------------------- #
 
-FROM base as build
+FROM base as prod
 
-WORKDIR /var/www/html
-
+# Additional PHP config
+RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini";
+    
+# Install composer production dependencies
 COPY composer.json composer.lock ./
 RUN composer install --no-autoloader --no-dev --no-interaction --no-progress --no-scripts --prefer-dist
 COPY . .
 RUN composer dump-autoload --no-dev --optimize
-
-RUN php artisan config:cache --no-interaction \
-    && php artisan route:cache --no-interaction \
-    && php artisan event:cache --no-interaction \
-    && php artisan views:cache --no-interaction \
-    && chown -R www-data:www-data /var/www/html;
-
-ENTRYPOINT ["docker-entrypoint"]
-CMD ["php-fpm"]
