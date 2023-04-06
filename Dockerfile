@@ -19,7 +19,8 @@ RUN apk add --no-cache \
 # Configure PHP
 ENV PHP_EXTENSIONS "bcmath intl opcache pcntl redis zip"
 COPY --from=extension-installer /usr/bin/install-php-extensions /usr/local/bin/
-RUN install-php-extensions $PHP_EXTENSIONS;
+RUN install-php-extensions $PHP_EXTENSIONS \
+    && php -m;
 
 # Add composer
 ENV COMPOSER_ALLOW_SUPERUSER 1
@@ -28,12 +29,14 @@ COPY --from=composer /composer /usr/bin/composer
 
 # Add locales
 ENV MUSL_LOCPATH /usr/share/i18n/locales/musl
+RUN LC_ALL=fr_FR.UTF-8 date -d "1970-01-01" +%B | grep "Janvier";
 
 # Set timezone
 ENV TZ UTC
 RUN cp /usr/share/zoneinfo/$TZ /etc/localtime \
     && echo $TZ > /etc/timezone \
-    && { echo "date.timezone = $TZ"; } | tee "$PHP_INI_DIR"/conf.d/zz-timezone.ini;
+    && { echo "date.timezone = $TZ"; } | tee "$PHP_INI_DIR"/conf.d/zz-timezone.ini \
+    && date +"%Z" | grep "$TZ";
 
 # --------------------------------------------------------------------------------------- #
 
@@ -43,6 +46,7 @@ FROM base as dev
 ENV PHP_DEV_EXTENSIONS "pcov xdebug"
 RUN install-php-extensions $PHP_DEV_EXTENSIONS
     && mv "$PHP_INI_DIR/php.ini-development" "$PHP_INI_DIR/php.ini";
+    && php -m;
    
 # Install composer dependencies
 COPY composer.json composer.lock ./
