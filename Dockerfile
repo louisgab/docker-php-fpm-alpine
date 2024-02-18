@@ -1,7 +1,7 @@
-ARG ALPINE_VERSION=3.17
-ARG PHP_VERSION=8.2
-ARG COMPOSER_VERSION=2.5
-ARG EXTENSION_INSTALLER_VERSION=2.1
+ARG ALPINE_VERSION=3.19
+ARG PHP_VERSION=8.3
+ARG COMPOSER_VERSION=2.7
+ARG EXTENSION_INSTALLER_VERSION=2.2
 
 FROM composer/composer:${COMPOSER_VERSION}-bin as composer
 FROM mlocati/php-extension-installer:${EXTENSION_INSTALLER_VERSION} as extension-installer
@@ -11,9 +11,12 @@ FROM mlocati/php-extension-installer:${EXTENSION_INSTALLER_VERSION} as extension
 FROM php:${PHP_VERSION}-fpm-alpine${ALPINE_VERSION} as base
 
 # Add alpine dependencies
-RUN apk add --no-cache \
+RUN --mount=type=cache,target=/var/cache/apk \
+    ln -s /var/cache/apk /etc/apk/cache \
+    && apk update && apk add --no-cache  \
     icu \
     musl-locales \
+    supervisor \
     tzdata;
  
 # Configure PHP
@@ -49,10 +52,12 @@ RUN install-php-extensions $PHP_DEV_EXTENSIONS
     && php -m;
    
 # Install composer dependencies
-COPY composer.json composer.lock ./
-RUN composer install --no-autoloader --no-interaction --no-progress --no-scripts --prefer-dist
+RUN --mount=type=bind,source=composer.json,target=composer.json \
+    --mount=type=bind,source=composer.lock,target=composer.lock \
+    --mount=type=cache,target=/root/.composer \
+    composer install --no-autoloader --no-interaction --no-progress --no-scripts --prefer-dist
 COPY . .
-RUN composer dump-autoload --optimize
+RUN composer dump-autoload --optimize --strict-psr
 
 # --------------------------------------------------------------------------------------- #
 
@@ -62,7 +67,9 @@ FROM base as prod
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini";
     
 # Install composer production dependencies
-COPY composer.json composer.lock ./
-RUN composer install --no-autoloader --no-dev --no-interaction --no-progress --no-scripts --prefer-dist
+RUN --mount=type=bind,source=composer.json,target=composer.json \
+    --mount=type=bind,source=composer.lock,target=composer.lock \
+    --mount=type=cache,target=/root/.composer \
+    composer install --no-autoloader --no-dev --no-interaction --no-progress --no-scripts --prefer-dist
 COPY . .
-RUN composer dump-autoload --no-dev --optimize
+RUN composer dump-autoload --no-dev --optimize --strict-psr
